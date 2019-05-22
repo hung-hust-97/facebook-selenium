@@ -1,0 +1,8 @@
+venv
+chrome*
+images
+.idea
+__pycache__
+*.pkl
+*.log
+*.txt
