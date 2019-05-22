@@ -31,9 +31,9 @@ class Livestream:
         self.driver = webdriver.Chrome(executable_path=r'./chromedriver', chrome_options=chrome_options)
 
         self.wait = WebDriverWait(self.driver, 10)
-        self.driver.get('https://www.facebook.com')
-        self.load_cookie('cookies.pkl')
-        # self.login(login, password)
+        # self.driver.get('https://www.facebook.com')
+        # self.load_cookie('cookies.pkl')
+        self.login(login, password)
 
     def login(self, login, password):
         self.driver.get(self.LOGIN_URL)
@@ -85,20 +85,16 @@ class Livestream:
         return [image for image in self._get_amount_image_list("li.fbPhotoStarGridElement")]
 
     def crawl_get_image_tagged(self, crawl_id):
-        np_list_image_crawled_ids = np.loadtxt('image_ids.txt', dtype=int, delimiter="\n")
         list_all_images = self.crawl_get_list_image_tagged(crawl_id)
 
         list_current_images_id = []
         for image in list_all_images:
             image_fb_id = image.get_attribute('data-fbid')
-            # Check if this image is crawled before ?
-            check = np.where(np_list_image_crawled_ids == float(image_fb_id))
-            if len(check[0]) != 0:
-                # Crawled => continue
+            href = str(image.find_element_by_xpath('.//a').get_attribute('href'))
+            if 'videos' in href.split('/'):
                 continue
-            # Click to open image
             try:
-                list_current_images_id.append(image_fb_id)
+                # list_current_images_id.append(image_fb_id)
                 image.click()
                 self.wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, '.photoTagLink')))
                 list_tag = self.driver.find_elements_by_css_selector('.photoTagLink')
@@ -110,19 +106,14 @@ class Livestream:
                     element = tag.find_element_by_css_selector(
                         'div.fbPhotosPhotoTagboxBase .borderTagBox').screenshot_as_png
                     im = Image.open(BytesIO(element))  # uses PIL library to open image in memory
-                    im.save(os.path.join('images', '%s_%s_%s.png'%(fb_id, image_fb_id, str(datetime.now().timestamp()))))
+                    im.save(os.path.join('images2', '%s_%s.png'%(fb_id, image_fb_id)))
                 # When finish => Click "X" to close and continue click other images
                 self.driver.find_element_by_xpath('//*[@id="photos_snowlift"]/div[2]/div/a').click()
             except WebDriverException:
                 continue
 
-
-        # Append into np array
-        np.append(np_list_image_crawled_ids, list_current_images_id)
-        np.savetxt('image_ids.txt', newline='\n')
-
-    def get_friend_list(self):
-        self.driver.get('https://fb.com/Longctes/friends')
+    def get_friend_list(self, fb_id):
+        self.driver.get('https://fb.com/%s/friends'%fb_id)
         num_of_loaded_images = len(self._get_amount_image_list("li._698"))
         while True:
             self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -148,7 +139,7 @@ class Livestream:
 
 if __name__ == '__main__':
     # neo4j = ImportNeo4j()
-    crawler = Livestream(login="vulong3896@gmail.com", password="l.o.n.g123!@#")
-    friends = crawler.get_friend_list()
+    crawler = Livestream(login="nonameforme3896@gmail.com", password="l.o.n.g123!@#")
+    friends = crawler.get_friend_list('doe.jhon.5876')
     for friend in friends:
         crawler.crawl_get_image_tagged(friend)

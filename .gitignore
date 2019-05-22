@@ -1,6 +1,6 @@
 venv
 chrome*
-images
+images*
 .idea
 __pycache__
 *.pkl
