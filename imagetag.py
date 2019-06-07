@@ -13,8 +13,9 @@ from selenium.webdriver.chrome.options import Options
 from PIL import Image
 from io import BytesIO
 import numpy as np
+import time
 
-sys.path.insert(0,os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# sys.path.insert(0,os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # from neo4jDir.createneo4j import ImportNeo4j
 
 
@@ -31,9 +32,9 @@ class Livestream:
         self.driver = webdriver.Chrome(executable_path=r'./chromedriver', chrome_options=chrome_options)
 
         self.wait = WebDriverWait(self.driver, 10)
-        # self.driver.get('https://www.facebook.com')
-        # self.load_cookie('cookies.pkl')
-        self.login(login, password)
+        self.driver.get('https://www.facebook.com')
+        self.load_cookie('cookies.pkl')
+        # self.login(login, password)
 
     def login(self, login, password):
         self.driver.get(self.LOGIN_URL)
@@ -87,7 +88,8 @@ class Livestream:
     def crawl_get_image_tagged(self, crawl_id):
         list_all_images = self.crawl_get_list_image_tagged(crawl_id)
 
-        list_current_images_id = []
+        ts = time.time()
+        time_allow = 150076800 # Five year
         for image in list_all_images:
             image_fb_id = image.get_attribute('data-fbid')
             href = str(image.find_element_by_xpath('.//a').get_attribute('href'))
@@ -97,8 +99,12 @@ class Livestream:
                 # list_current_images_id.append(image_fb_id)
                 image.click()
                 self.wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, '.photoTagLink')))
-                list_tag = self.driver.find_elements_by_css_selector('.photoTagLink')
 
+                img_time = self.driver.find_element_by_id('fbPhotoSnowliftTimestampAudienceContainer').find_element_by_css_selector('abbr').get_attribute('data-utime')
+                if img_time is not None and int(img_time)-ts>time_allow:
+                    continue
+
+                list_tag = self.driver.find_elements_by_css_selector('.photoTagLink')
                 for tag in list_tag:
                     fb_id = tag.find_element_by_css_selector('div.fbPhotosPhotoTagboxBase').get_attribute('id')
                     fb_id = re.match(r'.*tag:(.*)$', fb_id).group(1)
@@ -106,7 +112,7 @@ class Livestream:
                     element = tag.find_element_by_css_selector(
                         'div.fbPhotosPhotoTagboxBase .borderTagBox').screenshot_as_png
                     im = Image.open(BytesIO(element))  # uses PIL library to open image in memory
-                    im.save(os.path.join('images2', '%s_%s.png'%(fb_id, image_fb_id)))
+                    im.save(os.path.join('images', '%s_%s.png'%(fb_id, image_fb_id)))
                 # When finish => Click "X" to close and continue click other images
                 self.driver.find_element_by_xpath('//*[@id="photos_snowlift"]/div[2]/div/a').click()
             except WebDriverException:
@@ -138,8 +144,17 @@ class Livestream:
 
 
 if __name__ == '__main__':
-    # neo4j = ImportNeo4j()
-    crawler = Livestream(login="nonameforme3896@gmail.com", password="l.o.n.g123!@#")
+    crawler = Livestream(login="nonameforme3896@gmail.com", password="")
     friends = crawler.get_friend_list('doe.jhon.5876')
-    for friend in friends:
-        crawler.crawl_get_image_tagged(friend)
+    if friends is not None and len(friends)>0:
+        for friend in friends:
+            crawler.crawl_get_image_tagged(friend)
+    # with open('fb_ids.txt', 'r') as f:
+    #     while True:
+    #         id = f.readline().replace('\n', '')
+    #         if id is None or id == '':
+    #             break
+    #         try:
+    #             crawler.crawl_get_image_tagged(id)
+    #         except Exception:
+    #             continue

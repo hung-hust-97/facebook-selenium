@@ -1,8 +1,9 @@
 venv
+filted_images
 chrome*
 images*
 .idea
 __pycache__
 *.pkl
 *.log
-*.txt
+*.swp
