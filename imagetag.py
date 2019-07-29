@@ -33,8 +33,10 @@ class Livestream:
 
         self.wait = WebDriverWait(self.driver, 10)
         self.driver.get('https://www.facebook.com')
-        self.load_cookie('cookies.pkl')
-        # self.login(login, password)
+	if not os.exist('cookies.pkl'):
+            self.login(login, password)
+	else:
+	    self.load_cookie('cookies.pkl')
 
     def login(self, login, password):
         self.driver.get(self.LOGIN_URL)
