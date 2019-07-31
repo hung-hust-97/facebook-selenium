@@ -3,8 +3,6 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import NoSuchElementException, WebDriverException
 import sys, os, re, json
 from datetime import datetime
@@ -14,6 +12,8 @@ from PIL import Image
 from io import BytesIO
 import numpy as np
 import time
+import argparse
+
 
 # sys.path.insert(0,os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # from neo4jDir.createneo4j import ImportNeo4j
@@ -33,10 +33,12 @@ class Livestream:
 
         self.wait = WebDriverWait(self.driver, 10)
         self.driver.get('https://www.facebook.com')
-	if not os.exist('cookies.pkl'):
+        # self.login(login, password)
+        # self.load_cookie('cookies.pkl')
+        if os.path.exists('cookies.pkl'):
+            self.load_cookie('cookies.pkl')
+        else:
             self.login(login, password)
-	else:
-	    self.load_cookie('cookies.pkl')
 
     def login(self, login, password):
         self.driver.get(self.LOGIN_URL)
@@ -52,7 +54,7 @@ class Livestream:
         self.wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "div[data-click='profile_icon']")))
 
         facebook_cookies = self.driver.get_cookies()
-
+        print(facebook_cookies)
         with open("cookies.pkl", "wb") as fd:
             pickle.dump(facebook_cookies, fd)
 
@@ -64,6 +66,8 @@ class Livestream:
         with open(path, 'rb') as cookiesfile:
             cookies = pickle.load(cookiesfile)
             for cookie in cookies:
+                if 'expiry' in cookie:
+                    del cookie['expiry']
                 self.driver.add_cookie(cookie)
 
     def _get_amount_image_list(self, select_elem):
@@ -72,56 +76,64 @@ class Livestream:
 
     def crawl_get_list_image_tagged(self, fb_id):
         # navigate to "image tagged" page
-        self.driver.get("https://www.facebook.com/%s/photos_of"%fb_id)
+        try:
+            self.driver.get("https://www.facebook.com/%s/photos_of" % fb_id)
 
-        # continuous scroll until no more new friends loaded
-        num_of_loaded_images = len(self._get_amount_image_list("li.fbPhotoStarGridElement"))
+            # continuous scroll until no more new friends loaded
+            num_of_loaded_images = len(self._get_amount_image_list("li.fbPhotoStarGridElement"))
 
-        while True:
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            try:
-                self.wait.until(lambda driver: len(self._get_amount_image_list("li.fbPhotoStarGridElement")) > num_of_loaded_images)
-                num_of_loaded_images = len(self._get_amount_image_list("li.fbPhotoStarGridElement"))
-            except TimeoutException:
-                break  # no more friends loaded
+            while True:
+                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                try:
+                    self.wait.until(
+                        lambda driver: len(
+                            self._get_amount_image_list("li.fbPhotoStarGridElement")) > num_of_loaded_images)
+                    num_of_loaded_images = len(self._get_amount_image_list("li.fbPhotoStarGridElement"))
+                except TimeoutException:
+                    break  # no more friends loaded
+            return [image for image in self._get_amount_image_list("li.fbPhotoStarGridElement")]
+        except TimeoutException:
+            print('Time out!')
+            return
 
-        return [image for image in self._get_amount_image_list("li.fbPhotoStarGridElement")]
+    def crawl_get_image_tagged(self, fb_id):
+        list_all_images = self.crawl_get_list_image_tagged(fb_id)
 
-    def crawl_get_image_tagged(self, crawl_id):
-        list_all_images = self.crawl_get_list_image_tagged(crawl_id)
+        if list_all_images is not None:
+            ts = time.time()
+            time_allow = 150076800  # Five year
+            for image in list_all_images:
+                image_fb_id = image.get_attribute('data-fbid')
+                href = str(image.find_element_by_xpath('.//a').get_attribute('href'))
+                if 'videos' in href.split('/'):
+                    continue
+                try:
+                    # list_current_images_id.append(image_fb_id)
+                    image.click()
+                    self.wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, '.photoTagLink')))
 
-        ts = time.time()
-        time_allow = 150076800 # Five year
-        for image in list_all_images:
-            image_fb_id = image.get_attribute('data-fbid')
-            href = str(image.find_element_by_xpath('.//a').get_attribute('href'))
-            if 'videos' in href.split('/'):
-                continue
-            try:
-                # list_current_images_id.append(image_fb_id)
-                image.click()
-                self.wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, '.photoTagLink')))
+                    img_time = self.driver.find_element_by_id(
+                        'fbPhotoSnowliftTimestampAudienceContainer').find_element_by_css_selector('abbr').get_attribute(
+                        'data-utime')
+                    if img_time is not None and int(img_time) - ts > time_allow:
+                        continue
 
-                img_time = self.driver.find_element_by_id('fbPhotoSnowliftTimestampAudienceContainer').find_element_by_css_selector('abbr').get_attribute('data-utime')
-                if img_time is not None and int(img_time)-ts>time_allow:
+                    list_tag = self.driver.find_elements_by_css_selector('.photoTagLink')
+                    for tag in list_tag:
+                        fb_id = tag.find_element_by_css_selector('div.fbPhotosPhotoTagboxBase').get_attribute('id')
+                        fb_id = re.match(r'.*tag:(.*)$', fb_id).group(1)
+
+                        element = tag.find_element_by_css_selector(
+                            'div.fbPhotosPhotoTagboxBase .borderTagBox').screenshot_as_png
+                        im = Image.open(BytesIO(element))  # uses PIL library to open image in memory
+                        im.save(os.path.join('images', '%s_%s.png' % (fb_id, image_fb_id)))
+                    # When finish => Click "X" to close and continue click other images
+                    self.driver.find_element_by_xpath('//*[@id="photos_snowlift"]/div[2]/div/a').click()
+                except WebDriverException:
                     continue
 
-                list_tag = self.driver.find_elements_by_css_selector('.photoTagLink')
-                for tag in list_tag:
-                    fb_id = tag.find_element_by_css_selector('div.fbPhotosPhotoTagboxBase').get_attribute('id')
-                    fb_id = re.match(r'.*tag:(.*)$', fb_id).group(1)
-
-                    element = tag.find_element_by_css_selector(
-                        'div.fbPhotosPhotoTagboxBase .borderTagBox').screenshot_as_png
-                    im = Image.open(BytesIO(element))  # uses PIL library to open image in memory
-                    im.save(os.path.join('images', '%s_%s.png'%(fb_id, image_fb_id)))
-                # When finish => Click "X" to close and continue click other images
-                self.driver.find_element_by_xpath('//*[@id="photos_snowlift"]/div[2]/div/a').click()
-            except WebDriverException:
-                continue
-
     def get_friend_list(self, fb_id):
-        self.driver.get('https://fb.com/%s/friends'%fb_id)
+        self.driver.get('https://fb.com/%s/friends' % fb_id)
         num_of_loaded_images = len(self._get_amount_image_list("li._698"))
         while True:
             self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -144,19 +156,30 @@ class Livestream:
         return friend_list
 
 
-
 if __name__ == '__main__':
-    crawler = Livestream(login="nonameforme3896@gmail.com", password="")
-    friends = crawler.get_friend_list('doe.jhon.5876')
-    if friends is not None and len(friends)>0:
-        for friend in friends:
-            crawler.crawl_get_image_tagged(friend)
-    # with open('fb_ids.txt', 'r') as f:
-    #     while True:
-    #         id = f.readline().replace('\n', '')
-    #         if id is None or id == '':
-    #             break
-    #         try:
-    #             crawler.crawl_get_image_tagged(id)
-    #         except Exception:
-    #             continue
+    parser = argparse.ArgumentParser(description='facebook image crawler')
+    # general
+    parser.add_argument('--fb_ids', default='fb_ids.txt', help='path to load list facebook id.')
+    parser.add_argument('--craw_from_file', type=bool, default=False, help='crawl from a list of fb ids or from friend '
+                                                                           'list of an account')
+    args = parser.parse_args()
+
+    crawler = Livestream(login="", password="")
+
+    if args.craw_from_file:
+        assert os.path.exists(args.fb_ids), '%s is not exists'%args.fb_ids
+        with open('fb_ids.txt', 'r') as f:
+            while True:
+                id = f.readline().replace('\n', '')
+                if id is None or id == '':
+                    break
+                try:
+                    crawler.crawl_get_image_tagged(id)
+                except Exception as e:
+                    print(e)
+                    continue
+    else:
+        friend_list_fb_id = crawler.get_friend_list('doe.jhon.5876')
+        if friend_list_fb_id is not None and len(friend_list_fb_id) > 0:
+            for fb_id in friend_list_fb_id:
+                crawler.crawl_get_image_tagged(fb_id)
