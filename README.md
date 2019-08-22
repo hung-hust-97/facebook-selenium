@@ -1,5 +1,5 @@
 # Tutorial
-By Vu Van Long vulong3896@gmail.com
+
 ## Download chrome driver
 - Check your chrome version and go to this link http://chromedriver.chromium.org/downloads to download chromedriver version that sastifi with you chrome version
 - To check your chrome version open chrome and go to tab _Setting_ and then _About chrome_
